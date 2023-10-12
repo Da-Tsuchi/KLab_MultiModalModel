@@ -1,1 +1,1 @@
-from .oidv7_detection import OpenImageDataset_detection
+from .oidv7_detection import OpenImageDataset

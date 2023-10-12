@@ -23,30 +23,29 @@ class MyModel(nn.Module):
         if "resnet" in args.image_model_name: # 事前学習用に書き換えたのでおそらく動かない
             self.image_model = ResNetModel.from_pretrained(args.image_model_name).requires_grad_(args.image_model_train)
         elif "swinv2" in args.image_model_name:
-            self.image_model = Swinv2Model.from_pretrained(args.image_model_name, use_mask_token=args.phase).requires_grad_(args.image_model_train)
+            self.image_model = Swinv2Model.from_pretrained(args.image_model_name).requires_grad_(args.image_model_train)
             # self.num_patches = (self.image_model.config.image_size // self.image_model.config.patch_size) ** 2
             self.num_patches = 16 ** 2
 
-        # transformer_config = T5Config(
-        #     vocab_size=32128+args.loc_vocab_size+args.image_vocab_size, 
-        #     d_model=args.transformer_d_model,
-        #     d_ff=args.transformer_d_ff,
-        #     d_kv=args.transformer_d_kv,
-        #     num_heads=args.transformer_num_heads,
-        #     num_layers=args.transformer_num_layers,
-        #     num_decoder_layers=args.transformer_num_decoder_layers,
-        #     decoder_start_token_id=0,
-        #     max_length=args.max_target_length,
-        # )
-        # self.transformer = T5ForConditionalGeneration(transformer_config)
-        
+        transformer_config = T5Config(
+            vocab_size=32128+args.loc_vocab_size+args.image_vocab_size, 
+            d_model=args.transformer_d_model,
+            d_ff=args.transformer_d_ff,
+            d_kv=args.transformer_d_kv,
+            num_heads=args.transformer_num_heads,
+            num_layers=args.transformer_num_layers,
+            num_decoder_layers=args.transformer_num_decoder_layers,
+            decoder_start_token_id=0,
+            max_length=args.max_target_length
+        )
+
+        # 追加(t5 decorderを事前学習済みモデルに変更)
         # 事前学習済みのモデルと設定をロード
         pretrained_model = T5ForConditionalGeneration.from_pretrained(args.transformer_model_name)
         pretrained_config = pretrained_model.config
 
         # 設定を変更してエンコーダの層数を2に設定
         new_config = T5Config.from_pretrained(args.transformer_model_name)
-        # new_config.vocab_size=32128+args.loc_vocab_size+args.image_vocab_size
         new_config.num_layers = args.transformer_num_layers
         new_config.d_model = args.transformer_d_model  # d_modelの値を事前学習済みモデルと同じにする
         # new_config.vocab_size = 32128+args.loc_vocab_size+args.image_vocab_size
@@ -58,92 +57,57 @@ class MyModel(nn.Module):
 
         # # 事前学習済みモデルからデコーダの重みを新しいモデルにコピー
         new_model.decoder.load_state_dict(pretrained_model.decoder.state_dict())
+
+        # デコーダの重みを学習可能にする
+        for param in new_model.decoder.parameters():
+            param.requires_grad = True
+        
+        del pretrained_model
         
         self.transformer = new_model
-        del pretrained_model
-        del new_model
-        # 特定の重みの凍結
-        # すべてのパラメータのrequires_gradをFalseに設定してモデル全体を凍結
-        for param in self.transformer.decoder.parameters():
-            param.requires_grad = False
 
-        # 新しく追加したトークンに関連する重みのみを学習可能にします。
-        # T5の場合、最後の線形層の重みは共有されているため、lm_headの重みのみを更新します。
-        if args.loc_learn == "train":
-            for param in self.transformer.lm_head.parameters():
-                param.requires_grad = True
 
         if args.ffn: 
             self.language_ffn = nn.Linear(self.language_model.config.d_model, self.transformer.config.d_model)
             self.image_ffn = nn.Linear(self.image_model.num_features, self.transformer.config.d_model)
             # self.image_ffn = nn.Linear(self.image_model.last_hidden_states.shape[1], self.transformer.config.d_model)
-            
-        if args.phase == 'classify':
-            ignore_index = -100
+
+    def forward(self, images, src_texts, tgt_texts=None, return_loss=True, num_beams=1, num_return_sequences=1, do_sample=False, image_mask_ratio=0.0):
+        with torch.no_grad():
+            language_attention_mask = torch.ones(src_texts.shape[0], src_texts.shape[1], device=self.language_model.device)
+            language_attention_mask[src_texts == 0] = 0
+            # print("attentionmask",language_attention_mask)
+            language_embeddings = self.language_model(src_texts, attention_mask=language_attention_mask).last_hidden_state
+
+        if image_mask_ratio > 0: # 画像パッチにマスクをかける
+            bool_masked_pos = self.random_patch_masking(len(images), image_mask_ratio)
         else:
-            ignore_index = 0
-        if args.loss == 'CrossEntropy':
-            self.criterion = nn.CrossEntropyLoss(ignore_index=ignore_index)
-        elif args.loss == 'FocalLoss':
-            self.criterion = FocalLoss(ignore_index=ignore_index)
-        else:
-            raise NotImplementedError
-
-    def forward(self, images, src_texts, src_attention_masks=None, tgt_texts=None, tgt_attention_masks=None, return_loss=True, num_beams=1, num_return_sequences=1, do_sample=False, image_mask_ratio=0.0):
-        if self.args.float_type == 'bfloat16':
-            dtype = torch.bfloat16 
-        elif self.args.float_type == 'float16':
-            dtype = torch.float16
-        else:
-            dtype = torch.float32
-
-        if src_attention_masks is None:
-            src_attention_masks = torch.ones_like(src_texts, device=self.language_model.device)
-            src_attention_masks[src_texts == 0] = 0
-
-        with torch.autocast(device_type='cuda', dtype=dtype, enabled=True if self.args.float_type == 'bfloat16' else False):
-            language_embeddings = self.language_model(src_texts, attention_mask=src_attention_masks).last_hidden_state
-
-        # if image_mask_ratio > 0:  # 画像パッチにマスクをかける
-        #     bool_masked_pos = self.random_patch_masking(len(images), image_mask_ratio)
-        # else:
-        #     bool_masked_pos = None
+            bool_masked_pos = None
         # image_embeddings = self.image_model(pixel_values=images, bool_masked_pos=bool_masked_pos).last_hidden_state
-        with torch.autocast(device_type='cuda', dtype=dtype, enabled=True):
-            image_embeddings = self.image_model(pixel_values=images).last_hidden_state
+        image_embeddings = self.image_model(pixel_values=images).last_hidden_state
 
         if self.args.ffn:
-            with torch.autocast(device_type='cuda', dtype=dtype, enabled=True):
-                language_embeddings = self.language_ffn(language_embeddings)
-                image_embeddings = self.image_ffn(image_embeddings)
-
-        concated_embeddings = torch.cat((image_embeddings,language_embeddings), dim=1)
-        if self.args.phase == 'classify':
-            concated_embeddings = self.emb_cls_token(concated_embeddings)
-
-        image_attention_mask = torch.ones(image_embeddings.shape[0], image_embeddings.shape[1], device=self.image_model.device)
-        if self.args.phase == 'classify':
-            cls_attention_mask = torch.ones(image_embeddings.shape[0], 1, device=self.transformer.device)
-            concat_attention_mask = torch.cat((cls_attention_mask, image_attention_mask, src_attention_masks), dim=1)
+            language_embeddings = self.language_ffn(language_embeddings)
+            image_embeddings = self.image_ffn(image_embeddings)
+            
+        if self.args.loss == 'CrossEntropy':
+            self.criterion = nn.CrossEntropyLoss(ignore_index=0)
+        elif self.args.loss == 'FocalLoss':
+            self.criterion = FocalLoss(ignore_index=0)
         else:
-            concat_attention_mask = torch.cat((image_attention_mask, src_attention_masks), dim=1)
+            raise NotImplementedError
+        
+        image_attention_mask = torch.ones(image_embeddings.shape[0], image_embeddings.shape[1], device=self.image_model.device)
+        concat_attention_mask = torch.cat((image_attention_mask, language_attention_mask), dim=1)
+        concated_embeddings = torch.cat((image_embeddings,language_embeddings), dim=1)
 
         if return_loss:
-            if self.args.phase == 'classify':
-                with torch.autocast(device_type='cuda', dtype=dtype, enabled=True):
-                    outputs = self.transformer(inputs_embeds=concated_embeddings, attention_mask=concat_attention_mask)
-                    sequence_output = outputs[0]
-                    logits = self.classifier(sequence_output[:, 0, :])
-                    loss = self.criterion(logits, tgt_texts)
-                preds = torch.argmax(logits, dim=1)
-            else:
-                if tgt_attention_masks is None:
-                    tgt_attention_masks = torch.ones(tgt_texts.shape[0], tgt_texts.shape[1], device=self.transformer.device)
-                    tgt_attention_masks[tgt_texts == 0] = 0
-                with torch.autocast(device_type='cuda', dtype=dtype, enabled=True):
-                    logits = self.transformer(inputs_embeds=concated_embeddings, labels=tgt_texts, attention_mask=concat_attention_mask, decoder_attention_mask=tgt_attention_masks).logits
-                    loss = self.criterion(logits.view(-1,logits.shape[2]), tgt_texts.view(-1))
-                preds = torch.argmax(logits, dim=2)
+            tgt_attention_masks = torch.ones(tgt_texts.shape[0], tgt_texts.shape[1], device=self.transformer.device)
+            tgt_attention_masks[tgt_texts == 0] = 0
+            logits = self.transformer(inputs_embeds=concated_embeddings, labels=tgt_texts, attention_mask=concat_attention_mask, decoder_attention_mask=tgt_attention_masks).logits
+            loss = self.criterion(logits.view(-1,logits.shape[2]), tgt_texts.view(-1))
+            preds = torch.argmax(logits, dim=2)
+        
             return loss, preds
         else:
             # pred = self.transformer(inputs_embeds=concated_embeddings, labels=tgt_texts).logits

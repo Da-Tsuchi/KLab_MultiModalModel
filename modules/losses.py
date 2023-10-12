@@ -12,6 +12,7 @@ class LossCounter():
 
     def plot_loss(self, result_dir):
         # Plot the loss values.
+        fig = plt.figure()
         plt.plot(self.losses['train'], label='Train')
         plt.plot(self.losses['val'], label='Val')
 
@@ -25,12 +26,13 @@ class LossCounter():
         plt.savefig(os.path.join(result_dir, "loss.png"))
 
 class FocalLoss(torch.nn.Module):
-    def __init__(self, gamma=2):
+    def __init__(self, gamma=2,pad_token_id=0):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
+        self.pad_token_id = pad_token_id
 
     def forward(self, input, target):
-        ce_loss = F.cross_entropy(input, target, reduction='none')
+        ce_loss = F.cross_entropy(input, target, reduction='mean', ignore_index=self.pad_token_id)
         pt = torch.exp(-ce_loss)
         focal_loss = ((1 - pt) ** self.gamma * ce_loss).mean()
         return focal_loss

@@ -1,6 +1,10 @@
 import torch
 from torchvision import transforms
-from PIL import Image
+from PIL import Image,PngImagePlugin
+
+# Decompressed Data Too Largeになることを防ぐ
+LARGE_ENOUGH_NUMBER = 100
+PngImagePlugin.MAX_TEXT_CHUNK = LARGE_ENOUGH_NUMBER * (1024**2)
 
 class DatasetLoader(torch.utils.data.Dataset):
     def __init__(self, resize=256):
@@ -20,7 +24,7 @@ class DatasetLoader(torch.utils.data.Dataset):
         image, src_text, tgt_text = self.images[idx], self.src_texts[idx], self.tgt_texts[idx]
         image = Image.open(image).convert('RGB')
         src_image = self.src_transforms(image)
-        tgt_image = None
+        tgt_image = self.src_transforms(image)
 
         return src_image, tgt_image, src_text, tgt_text
     

@@ -22,3 +22,10 @@ train_with_swin_*.sh
 test_only_transformer_*.sh
 test_with_swin_*.sh
 job.sh
+
+wandb/
+
+tsuchida_workdir/
+core
+coco-caption/
+backup.best.pth

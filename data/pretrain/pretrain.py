@@ -60,18 +60,21 @@ class ClassifyPretrainDatasetLoader(PretrainDatasetLoader):
         super().__init__(args, resize, src_tokenizer, tgt_tokenizer, mask_probability)
 
     def __getitem__(self, idx):
-        image, text = self.images[idx], self.src_texts[idx]
+        image, src_text,tgt_text = self.images[idx], self.src_texts[idx],self.tgt_texts[idx]
         rate = random.random()
-        if rate < 0.25:
-            text = 'A short image description: ' + text
-        elif rate < 0.5:
-            text = 'An image of ' + text
-        elif rate < 0.75:
-            text = 'A photo of ' + text
-        else:
-            text = 'An image that shows ' + text
-        src_text = self.tgt_tokenizer.encode_plus(text, return_attention_mask=False, verbose=False)["input_ids"][:-1]
-        tgt_text = self.generate_target_ids(src_text)
+
+        # if rate < 0.25:
+        #     text = 'A short image description: ' + text
+        # elif rate < 0.5:
+        #     text = 'An image of ' + text
+        # elif rate < 0.75:
+        #     text = 'A photo of ' + text
+        # else:
+        #     text = 'An image that shows ' + text
+        
+        src_text = self.tgt_tokenizer.encode_plus(src_text, return_attention_mask=False, verbose=False)["input_ids"][:-1]
+        tgt_text = self.tgt_tokenizer.encode_plus(tgt_text, return_attention_mask=False, verbose=False)["input_ids"][:-1]
+        # tgt_text = self.generate_target_ids(src_text)
         src_text = self.tgt_tokenizer.decode(src_text)
         tgt_text = self.tgt_tokenizer.decode(tgt_text)
 

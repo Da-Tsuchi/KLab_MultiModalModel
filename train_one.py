@@ -1,3 +1,4 @@
+import wandb
 import os
 import random
 import torch
@@ -8,7 +9,9 @@ import matplotlib.pyplot as plt
 
 from data import *
 from modules import *
-from models.model import MyModel
+from models.model_decode import MyModel
+from modules.acc import *
+from modules.utils import *
 
 def train():
     args = parse_arguments()
@@ -23,6 +26,14 @@ def train():
 
     logger = get_logger(args)
 
+    wandb.init(
+    # set the wandb project where this run will be logged
+        project="sample-project",
+        # track hyperparameters and run metadata
+        config=args,
+    )
+
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # create model
     model = MyModel(args).to(device)
@@ -31,11 +42,11 @@ def train():
     scheduler = get_scheduler(args, optimizer)
 
     src_tokenizer = AutoTokenizer.from_pretrained(args.language_model_name, model_max_length=256, use_fast=True)
-    tgt_tokenizer = AutoTokenizer.from_pretrained(args.language_model_name, model_max_length=256, use_fast=True, extra_ids=0, additional_special_tokens =[f"<extra_id_{i}>" for i in range(100)] + [f"<loc_{i}>" for i in range(args.loc_vocab_size)] + [f"<img_{i}>" for i in range(args.image_vocab_size)])
+    # tgt_tokenizer = AutoTokenizer.from_pretrained(args.language_model_name, model_max_length=256, use_fast=True, extra_ids=0, additional_special_tokens =[f"<extra_id_{i}>" for i in range(100)] + [f"<loc_{i}>" for i in range(args.loc_vocab_size)] + [f"<img_{i}>" for i in range(args.image_vocab_size)])
 
     # データの設定
-    train_dataset, val_dataset = get_data(args, src_tokenizer, tgt_tokenizer)
-    train_loader = get_dataloader(args, train_dataset, num_workers=1, shuffle=False)
+    train_dataset, val_dataset = get_data(args)
+    train_loader = get_dataloader(args, train_dataset, num_workers=4, shuffle=False)
 
     if args.num_epochs is None:
         print("This code only supports num_epochs mode.")
@@ -46,8 +57,11 @@ def train():
 
     src_images, tgt_images, src_texts, tgt_texts = train_dataset[0]
     src_images = src_images.unsqueeze(0)
-    # tgt_images = tgt_images.unsqueeze(0)
+    tgt_images = tgt_images.unsqueeze(0)
 
+    data_iter = iter(train_loader)
+    src_images,tgt_images,src_texts,tgt_texts = data_iter.__next__()
+    
     src_images = src_images.to(device)
 
     # if args.pretrain:
@@ -65,12 +79,18 @@ def train():
     print("src_texts", src_texts)
     print("tgt_texts", tgt_texts)
     src_texts = src_tokenizer(src_texts, padding="longest", max_length=args.max_source_length, return_tensors='pt')['input_ids'].to(device) # ['pt', 'tf', 'np', 'jax']
-    tgt_texts = tgt_tokenizer(tgt_texts, padding="longest", max_length=args.max_target_length, return_tensors='pt')['input_ids'].to(device) # ['pt', 'tf', 'np', 'jax']
+    tgt_texts = src_tokenizer(tgt_texts, padding="longest", max_length=args.max_target_length, return_tensors='pt')['input_ids'].to(device) # ['pt', 'tf', 'np', 'jax']
     print("src_texts", src_texts)
     print("tgt_texts", tgt_texts)
-
+    train_count = 0
     for epoch in range(1, args.num_epochs+1):
         # 学習ループ
+        tgt_text = tgt_texts
+        
+        
+        train_count = torch.tensor(0).to(device)
+        train_cider = torch.tensor(0.0).to(device)  # 正解のカウント用の変数を初期化
+        train_bleu = torch.tensor(0.0).to(device)
         if args.image_model_train:
             model.image_model.train()
         model.transformer.train()
@@ -79,9 +99,18 @@ def train():
 
         image_mask_ratio = 0.0
 
-        loss = model(src_images, src_texts, tgt_texts, image_mask_ratio=image_mask_ratio)
+        gts = []
+        prs = []
+        
+        train_count += src_images.shape[0]
+        loss, pred = model(src_images, src_texts, tgt_texts, image_mask_ratio=image_mask_ratio)
+        print(pred)
+        preds = src_tokenizer.batch_decode(pred[:, 1:-1])
+        print(preds)
         loss.backward()
-
+        
+        # for param in model.transformer.parameters():
+        #     print(param.grad)
         train_loss = loss.item()
 
         optimizer.step()
@@ -92,14 +121,43 @@ def train():
 
         if args.lr_scheduler != '':
             scheduler.step()
+            
+        # 予測の取得
+        
+        cleaned_preds = []
+        for pred in preds:
+            # '</s>'が現れる位置を見つけます
+            end_pos = pred.find('</s>')
+            # '</s>'が見つかった場合、その位置までの文字列を保持します
+            if end_pos != -1:
+                pred = pred[:end_pos]
 
-        logger.info(f'[Epoch ({epoch}/{args.num_epochs})] Train loss : {train_loss}, Steps : {steps}, Image mask ratio : {image_mask_ratio}')
+            # '<pad>'を削除します
+            pred = pred.replace('<pad>', '')
+
+            cleaned_preds.append(pred.strip())  # 空白を削除してリストに追加します
+                    # print(cleaned_preds)
+                    # print(tgt_text)
+        gts.extend(tgt_text)
+        prs.extend(cleaned_preds)
+        
+        # 予測と実際のテキストが一致するかどうかを確認
+        cider,bleu = evaluate_score(prs, gts)
+        train_cider += torch.tensor(cider, dtype=torch.float32).to(device)
+        train_bleu += torch.tensor(bleu, dtype=torch.float32).to(device)
+        
+        train_cider_acc = train_cider.float() / train_count  # 正答率を計算
+        # cider_counter.add("train", train_cider_acc.cpu().numpy().copy())  # 正答率をAccCounterに追加
+        train_bleu_acc = train_bleu.float() / train_count  # 正答率を計算
+
+        logger.info(f'[Epoch ({epoch}/{args.num_epochs})] Train loss : {train_loss}, Steps : {steps}, CIDEr : {train_cider_acc}, BLEU : {train_bleu_acc}')
+        wandb.log({"train_loss": train_loss, "train_cider": train_cider_acc, "train_bleu": train_bleu_acc})
 
         if (epoch) % 50 == 0:
             with torch.no_grad():
                 # outputs = model(src_images, src_texts, tgt_texts, return_loss=False, num_beams=4)
                 outputs = model(src_images, src_texts, tgt_texts, return_loss=False)
-                preds = tgt_tokenizer.batch_decode(outputs)
+                preds = src_tokenizer.batch_decode(outputs)
 
                 print(f"Generated text: {preds}")
                 # matches = []
@@ -130,8 +188,12 @@ def train():
         with open(csv_path, "w") as f:
             f.write("image_model_name,language_model_name,transformer_num_layers,transformer_num_decoder_layers,seed,lr,optimizer,lr_scheduler,batch_size,num_epochs,datasets,train_loss,result_dir\n")
             
-    with open(csv_path, "a") as f:
-        f.write(f"{args.image_model_name},{args.language_model_name},{args.transformer_num_layers},{args.transformer_num_decoder_layers},{args.seed},{args.lr},{args.optimizer},{args.lr_scheduler},{args.batch_size},{args.num_epochs},{args.datasets},{train_loss},{args.result_dir}\n")
+    wandb.alert(
+        title='学習が完了しました。',
+        text='学習が完了しました。結果を確認してください。',
+    )
+
+    wandb.finish()
 
 def custom_to_pil(x):
     x = x.detach().cpu()
