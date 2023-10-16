@@ -9,6 +9,7 @@ from .pretrain import *
 from .relationship import *
 from .detection import *
 from .detection.oidv7_detection import OpenImageDataset
+from .vqa.gqa import GQADataset
 
 def get_data(args, src_tokenizer=None, tgt_tokenizer=None):
     train_datasets, val_datasets = [], []
@@ -87,8 +88,8 @@ def get_dataset(args, dataset_name, phase="train", src_tokenizer=None, tgt_token
             dataset = ImageNetDatasetLoader(data_dir, phase=phase)
         # elif 'imagenet_21k' == dataset_name:
         #     dataset = ImageNet21kDatasetLoader(data_dir, phase=phase)
-        elif 'grit20m' == dataset_name:
-            dataset = GRIT20MDatasetLoader(data_dir, phase=phase)
+        elif 'gqa' == dataset_name:
+            dataset = GQADataset(data_dir, phase=phase)
 
         elif 'openimage' == dataset_name:
             dataset = OpenImageDataset(data_dir, phase=phase)

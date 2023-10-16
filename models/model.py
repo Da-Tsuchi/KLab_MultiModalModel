@@ -65,7 +65,7 @@ class MyModel(nn.Module):
         # 特定の重みの凍結
         # すべてのパラメータのrequires_gradをFalseに設定してモデル全体を凍結
         for param in self.transformer.decoder.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
 
         # 新しく追加したトークンに関連する重みのみを学習可能にします。
         # T5の場合、最後の線形層の重みは共有されているため、lm_headの重みのみを更新します。
@@ -193,9 +193,9 @@ class MyModel(nn.Module):
     def load(self, result_name="best.pth"):
         result_path = os.path.join(self.args.result_dir, result_name)
         checkpoints = torch.load(result_path)
-        self.transformer.load_state_dict(checkpoints['transformer'])
+        self.transformer.load_state_dict(checkpoints['transformer'],strict=False)
         if self.args.image_model_train:
             self.image_model.load_state_dict(checkpoints['image_model'])
         if self.args.ffn:
-            self.language_ffn.load_state_dict(checkpoints['language_ffn'])
-            self.image_ffn.load_state_dict(checkpoints['image_ffn'])
+            self.language_ffn.load_state_dict(checkpoints['language_ffn'],strict=False)
+            self.image_ffn.load_state_dict(checkpoints['image_ffn'],strict=False)

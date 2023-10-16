@@ -57,15 +57,24 @@ def train():
     model = MyModel(args).to(local_rank)
     tgt_tokenizer = AutoTokenizer.from_pretrained(args.language_model_name, model_max_length=args.max_target_length, use_fast=True, extra_ids=0, additional_special_tokens =[f"<loc_{i}>" for i in range(args.loc_vocab_size)])
     model.transformer.resize_token_embeddings(len(tgt_tokenizer))
-
+    # print(model)
     if args.loc_learn=="lora":
         lora_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
-        target_modules="transformer.lm_head",
+        target_modules=[
+                f"transformer.decoder.block.{i}.layer.0.SelfAttention.{endpoint}" 
+                for i in range(args.transformer_num_decoder_layers)
+                for endpoint in ["q", "k", "v"]
+            ] + [
+                f"transformer.decoder.block.{i}.layer.1.EncDecAttention.{endpoint}"
+                for i in range(args.transformer_num_decoder_layers)
+                for endpoint in ["q", "k", "v"]
+            ],
         lora_dropout=args.lora_dropout,
         bias=args.lora_bias,
         modules_to_save=["transformer.encoder",
+                         "transformer.lm_head",
                         "language_ffn",
                         "image_ffn"],
         )
@@ -73,7 +82,7 @@ def train():
     
     if args.start_epoch > 1:
         model.load(result_name='best.pth')
-    model = DDP(model, device_ids=[local_rank],find_unused_parameters=True)#,find_unused_parameters=True)
+    model = DDP(model, device_ids=[local_rank])#,find_unused_parameters=True)
     
     if world_rank==0:
         logger.info(print_trainable_parameters(model))
