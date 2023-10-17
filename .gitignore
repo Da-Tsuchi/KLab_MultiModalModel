@@ -25,7 +25,10 @@ job.sh
 
 wandb/
 
-tsuchida_workdir/
+tsuchida_workdir/pth/
+tsuchida_workdir/*.pth
+tsuchida_workdir/train.log
+
 core
 coco-caption/
 backup.best.pth
