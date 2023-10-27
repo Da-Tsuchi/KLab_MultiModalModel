@@ -117,8 +117,10 @@ def evaluate_score(pred_text, actual_text):
         (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
         (Cider(), "CIDEr")
     ]
-
+    print(gts)
+    print(res)
     final_scores = {}
+    
     with suppress_stdout():
         for scorer, metric in scorers:
             score, scores = scorer.compute_score(gts, res)
@@ -128,5 +130,9 @@ def evaluate_score(pred_text, actual_text):
             else:
                 final_scores[metric] = score
 
+    print(final_scores)
     return final_scores['CIDEr'], final_scores['Bleu_4']
-
+    
+# pred=["This is a cat","aiueo is a cat"]
+# actual=["This is a dog","aiueo is a cat"]
+# print(evaluate_score(pred, actual))

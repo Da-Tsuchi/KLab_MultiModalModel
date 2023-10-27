@@ -15,6 +15,7 @@ from modules.acc import *
 from modules.utils import *
 from models.model import MyModel
 from peft import LoraConfig, get_peft_model
+# from torchinfo import summary
 
 use_wandb = False
 if pkgutil.find_loader("wandb") is not None:
@@ -62,27 +63,37 @@ def train():
         lora_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
-        target_modules=[
+        target_modules=
+        [
                 f"transformer.decoder.block.{i}.layer.0.SelfAttention.{endpoint}" 
                 for i in range(args.transformer_num_decoder_layers)
                 for endpoint in ["q", "k", "v"]
-            ] + [
+            ] + 
+            [
                 f"transformer.decoder.block.{i}.layer.1.EncDecAttention.{endpoint}"
                 for i in range(args.transformer_num_decoder_layers)
                 for endpoint in ["q", "k", "v"]
-            ],
-        lora_dropout=args.lora_dropout,
-        bias=args.lora_bias,
-        modules_to_save=["transformer.encoder",
+            ]+
+            [
+                f"transformer.encoder.block.{i}.layer.0.SelfAttention.{endpoint}" 
+                for i in range(args.transformer_num_layers)
+                for endpoint in ["q", "k", "v"]
+            ]
+            +
+            [
                          "transformer.lm_head",
                         "language_ffn",
                         "image_ffn"],
+
+        lora_dropout=args.lora_dropout,
+        bias=args.lora_bias,
+        # modules_to_save=
         )
         model = get_peft_model(model, lora_config)
     
     if args.start_epoch > 1:
         model.load(result_name='best.pth')
-    model = DDP(model, device_ids=[local_rank])#,find_unused_parameters=True)
+    model = DDP(model, device_ids=[local_rank],find_unused_parameters=True)
     
     if world_rank==0:
         logger.info(print_trainable_parameters(model))
@@ -189,6 +200,8 @@ def train():
                 if args.num_steps is not None:
                     scheduler.step()
 
+            
+
             # 予測の取得
             preds = tgt_tokenizer.batch_decode(preds[:, 1:-1])
             cleaned_preds = []
@@ -207,6 +220,7 @@ def train():
                         # print(tgt_text)
             gts.extend(tgt_text)
             prs.extend(cleaned_preds)
+
 
         # 予測と実際のテキストが一致するかどうかを確認
         cider,bleu = evaluate_score(prs, gts)
@@ -299,6 +313,7 @@ def train():
                 gts.extend(tgt_text)
                 prs.extend(cleaned_preds)
 
+
         # 予測と実際のテキストが一致するかどうかを確認
         cider,bleu = evaluate_score(prs, gts)
         val_cider += torch.tensor(cider, dtype=torch.float32).to(local_rank)
@@ -331,23 +346,33 @@ def train():
 
             if val_loss < min_val_loss:
                 min_val_loss = val_loss
-                print('Best Model and Optimizer saving...')
-                model.module.save()
-                torch.save(optimizer.state_dict(), os.path.join(args.result_dir, 'best.optimizer'))
-                logger.info('Best Model and Optimizer saved')
+                # print('Best Model and Optimizer saving...')
+                # torch.save(optimizer.state_dict(), os.path.join(args.result_dir, 'best.optimizer'))
+                # if(args.loc_learn=="lora"):
+                #     model.module.save_pretrained(args.result_dir+"/bestLora")
+                # model.module.save()
+                # logger.info('Best Model and Optimizer saved')
 
             if args.save_interval is not None:
                 if args.num_steps is None:
                     if (epoch) % args.save_interval == 0:
                         print(f'Model and Optimizer {epoch} saving...')
-                        model.module.save(result_name=f'epoch_{epoch}.pth')
                         torch.save(optimizer.state_dict(), os.path.join(args.result_dir, f'epoch_{epoch}.optimizer'))
+                        model.module.save(result_name=f'epoch_{epoch}.pth')
+                        if(args.loc_learn=="lora"):
+                            model.module.save_pretrained(args.result_dir+f"/epoch_{epoch}")
+                            # merged_model = model.merge_and_unload()
+                            # merged_model.save_pretrained() #モデル全体容量大きい
+                        
                         print(f'Model and Optimizer {epoch} saved')
                 else:
                     if steps % args.save_interval == 0:
                         print(f'Model and Optimizer {steps} saving...')
-                        model.module.save(result_name=f'step_{steps}.pth')
                         torch.save(optimizer.state_dict(), os.path.join(args.result_dir, f'step_{steps}.optimizer'))
+                        model.module.save(result_name=f'step_{steps}.pth')
+                        if(args.loc_learn=="lora"):
+                            model.module.save_pretrained(args.result_dir+f"/steps_{steps}")
+                        
                         print(f'Model and Optimizer {steps} saved')
             
     if world_rank == 0: 

@@ -9,7 +9,7 @@ d_model=768
 d_ff=3072
 d_kv=64
 num_heads=12
-enc=2
+enc=0
 dec=12
 
 # image:swin_large

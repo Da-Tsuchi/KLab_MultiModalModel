@@ -3,7 +3,6 @@ import torch
 import numpy as np
 from torch import nn
 from transformers import T5EncoderModel, Swinv2Model, T5Config, logging, ResNetModel, T5ForConditionalGeneration
-from models.vqgan import VQModel
 from modules.losses import FocalLoss
 logging.set_verbosity_error()
 
@@ -13,6 +12,7 @@ class MyModel(nn.Module):
         super().__init__()
         self.args = args
         self.result_dir = args.result_dir
+        self.main_input_name = "input_embeds"
         
         # self.vae = VQModel(ckpt_path=args.vae_ckpt_path).requires_grad_(False)
         # self.vae.eval()
@@ -60,12 +60,13 @@ class MyModel(nn.Module):
         new_model.decoder.load_state_dict(pretrained_model.decoder.state_dict())
         
         self.transformer = new_model
+        self.transformer.main_input_name = "concated_embeddings"
         del pretrained_model
         del new_model
         # 特定の重みの凍結
         # すべてのパラメータのrequires_gradをFalseに設定してモデル全体を凍結
         for param in self.transformer.decoder.parameters():
-            param.requires_grad = True
+            param.requires_grad = False
 
         # 新しく追加したトークンに関連する重みのみを学習可能にします。
         # T5の場合、最後の線形層の重みは共有されているため、lm_headの重みのみを更新します。
@@ -199,3 +200,17 @@ class MyModel(nn.Module):
         if self.args.ffn:
             self.language_ffn.load_state_dict(checkpoints['language_ffn'],strict=False)
             self.image_ffn.load_state_dict(checkpoints['image_ffn'],strict=False)
+            
+    # def generate(self, pixel_values, max_length=20):
+    #     self.transformer.encoder_hidden_states = torch.unsqueeze(
+    #         self.video_encoder(pixel_values=pixel_values), 1
+    #     )
+    #     input_ids = torch.LongTensor(
+    #         [[self.decoder.config.bos_token_id] for _ in range(pixel_values.size()[0])]
+    #     ).to(pixel_values.device)
+    #     generated_ids = self.transformer.decoder.generate(
+    #         input_ids,
+    #         encoder_hidden_states=encoder_hidden_states,
+    #         max_new_tokens=max_length,
+    #     )
+    #     return generated_ids
