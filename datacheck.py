@@ -17,11 +17,6 @@ from models.model import MyModel
 from peft import LoraConfig, get_peft_model
 # from torchinfo import summary
 
-use_wandb = False
-if pkgutil.find_loader("wandb") is not None:
-    import wandb
-    use_wandb = True
-
 def train():
     args = parse_arguments()
     if args.multinode:
@@ -44,7 +39,7 @@ def train():
 
     if world_rank == 0: 
         os.makedirs(args.result_dir, exist_ok=True)
-        if use_wandb: wandb_init(args)
+        # if use_wandb: wandb_init(args)
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -200,7 +195,7 @@ def train():
                 pbar.update(1)
                 if world_rank == 0: 
                     steps += 1
-                    if use_wandb: wandb.log({"iter":steps, "iter/loss": loss.item(), "iter/lr": optimizer.param_groups[0]["lr"]})
+                    # if use_wandb: wandb.log({"iter":steps, "iter/loss": loss.item(), "iter/lr": optimizer.param_groups[0]["lr"]})
                 if args.num_steps is not None:
                     scheduler.step()
 
@@ -250,10 +245,10 @@ def train():
             if args.phase == 'classify': 
                 train_acc /= train_count
                 logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Train] Loss : {train_loss}, Acc : {train_acc}, Steps : {steps}, LR : {optimizer.param_groups[0]["lr"]}')
-                if use_wandb: wandb.log({"epoch":epoch, "train/loss": train_loss, "train/acc": train_acc, "train/lr": optimizer.param_groups[0]["lr"]})
+                # if use_wandb: wandb.log({"epoch":epoch, "train/loss": train_loss, "train/acc": train_acc, "train/lr": optimizer.param_groups[0]["lr"]})
             else:
-                # logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Train] Loss : {train_loss}, Steps : {steps}, LR : {optimizer.param_groups[0]["lr"]}')
-                if use_wandb: wandb.log({"epoch":epoch, "train/loss": train_loss, "train/lr": optimizer.param_groups[0]["lr"]})
+                logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Train] Loss : {train_loss}, Steps : {steps}, LR : {optimizer.param_groups[0]["lr"]}')
+                # if use_wandb: wandb.log({"epoch":epoch, "train/loss": train_loss, "train/lr": optimizer.param_groups[0]["lr"]})
 
         if args.lr_scheduler != '' and args.num_steps is None:
             scheduler.step()
@@ -340,13 +335,13 @@ def train():
             if args.phase == 'classify':
                 val_acc /= val_count
                 logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Val] Loss : {val_loss}, Acc : {val_acc}')
-                if use_wandb: wandb.log({"epoch": epoch, "val/loss": val_loss, "val/acc": val_acc})
+                # if use_wandb: wandb.log({"epoch": epoch, "val/loss": val_loss, "val/acc": val_acc})
             else:
-                # logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Val] Loss : {val_loss}')
-                if use_wandb: wandb.log({"epoch": epoch, "val/loss": val_loss})
+                logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Val] Loss : {val_loss}')
+                # if use_wandb: wandb.log({"epoch": epoch, "val/loss": val_loss})
 
             logger.info(f'[Epoch ({epoch}/{args.num_epochs})] Train loss : {train_loss}, Val loss : {val_loss}, Train cider : {train_cider}, Val cider : {val_cider}, Train bleu : {train_bleu}, Val bleu : {val_bleu}, Train Count : {train_count}, Val Count : {val_count},Steps : {steps}')
-            wandb.log({"train_cider": train_cider, "val_cider": val_cider, "train_bleu": train_bleu, "val_bleu": val_bleu})
+            # wandb.log({"train_cider": train_cider, "val_cider": val_cider, "train_bleu": train_bleu, "val_bleu": val_bleu})
 
             if val_loss < min_val_loss:
                 min_val_loss = val_loss
@@ -381,19 +376,19 @@ def train():
             
     if world_rank == 0: 
         loss_counter.plot_loss(args.result_dir)
-        if use_wandb: wandb.finish()
+        # if use_wandb: wandb.finish()
 
-def wandb_init(args):
-    wandb.init(
-        project=f"{args.phase}_"+"_".join(args.datasets), 
-        name=args.lr_scheduler if args.lr_scheduler != '' else 'wo_scheduler',
-        config=args
-    )
-    wandb.define_metric("epoch")
-    wandb.define_metric("iter")
-    wandb.define_metric("iter/*", step_metric="iter")
-    wandb.define_metric("train/*", step_metric="epoch")
-    wandb.define_metric("val/*", step_metric="epoch")
+# def wandb_init(args):
+#     wandb.init(
+#         project=f"{args.phase}_"+"_".join(args.datasets), 
+#         name=args.lr_scheduler if args.lr_scheduler != '' else 'wo_scheduler',
+#         config=args
+#     )
+#     wandb.define_metric("epoch")
+#     wandb.define_metric("iter")
+#     wandb.define_metric("iter/*", step_metric="iter")
+#     wandb.define_metric("train/*", step_metric="epoch")
+#     wandb.define_metric("val/*", step_metric="epoch")
 
 if __name__=="__main__":
     train()

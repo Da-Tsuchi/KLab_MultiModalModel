@@ -53,7 +53,7 @@ def parse_arguments():
     parser.add_argument('--warmup_steps', type=int, default=None, help='学習率を上げるステップ数')
     parser.add_argument('--warmup_epochs', type=int, default=5, help='学習率を上げるepoch数')
     parser.add_argument('--save_interval', type=int, default=2, help='モデルの保存間隔')
-    parser.add_argument('--datasets', nargs='+', default=['imagenet', 'sun397'], choices=['redcaps', 'imagenet', 'imagenet_21k', 'places365', 'inaturalist', 'cc3m', 'cc12m', 'sun397', 'mscoco', 'vcr', 'vqa2', 'imsitu', 'imagenet','grit20m','openimage'], help='使用データセットの名前')
+    parser.add_argument('--datasets', nargs='+', default=['imagenet', 'sun397'], choices=['redcaps', 'imagenet', 'imagenet_21k', 'places365', 'inaturalist', 'cc3m', 'cc12m', 'sun397', 'mscoco', 'vcr', 'vqa2', 'imsitu', 'imagenet','grit20m','openimage','visual_genome_refexp',"visual_genome_detect","visual_genome_categorize","visual_genome_localize","visual_genome_relationship"], help='使用データセットの名前')
     # Dir setting
     parser.add_argument('--root_dir', type=str, default='/user/data/', help='データのディレクトリ')
     parser.add_argument('--result_dir', type=str, default='results/', help='結果を保存するディレクトリ')
@@ -65,6 +65,8 @@ def parse_arguments():
     parser.add_argument('--lora_bias',type=str,default="none",choices=["none","learn"],help="LoRAのbias")
     parser.add_argument('--lora_target_modules',nargs='+',default=["transformer.lm_head"],help="LoRAの対象モジュール")
     parser.add_argument('--lora_modules_to_save',type=str,default="language_model.shared,language_model.encoder.block.*.layer.*.SelfAttention.q,language_model.encoder.block.*.layer.*.SelfAttention.k,language_model.encoder.block.*.layer.*.SelfAttention.v",help="LoRAの保存するモジュール")
+
+    parser.add_argument("--pth_path",type=str,default="",help="pthのパス")
 
     args = parser.parse_args()
     return args

@@ -72,8 +72,13 @@ class BleuCounter():
         # Show the plot.
         plt.savefig(os.path.join(result_dir, "bleu.png"))
         
+import contextlib
+import io
+import sys
+
 from pycocoevalcap.bleu.bleu import Bleu
 from pycocoevalcap.cider.cider import Cider
+from pycocoevalcap.rouge.rouge import Rouge
 
 @contextlib.contextmanager
 def suppress_stdout():
@@ -115,24 +120,24 @@ def evaluate_score(pred_text, actual_text):
     # Instantiate the CIDEr evaluator object
     scorers = [
         (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
-        (Cider(), "CIDEr")
+        (Cider(), "CIDEr"),
+        (Rouge(), "ROUGE_L")
     ]
-    print(gts)
-    print(res)
+
     final_scores = {}
-    
+    final_scores_all = {}
     with suppress_stdout():
         for scorer, metric in scorers:
             score, scores = scorer.compute_score(gts, res)
-            if type(score) == list:
-                for m, s in zip(metric, score):
+            if isinstance(metric, list): # Bleu
+                for m, s, ss in zip(metric, score, scores):
                     final_scores[m] = s
+                    final_scores_all[m] = ss
             else:
                 final_scores[metric] = score
+                final_scores_all[metric] = scores
 
-    print(final_scores)
-    return final_scores['CIDEr'], final_scores['Bleu_4']
-    
+    return final_scores, final_scores_all
 # pred=["This is a cat","aiueo is a cat"]
 # actual=["This is a dog","aiueo is a cat"]
 # print(evaluate_score(pred, actual))

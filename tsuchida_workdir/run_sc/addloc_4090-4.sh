@@ -1,4 +1,4 @@
-batch_size=3
+batch_size=20
 # dataset="cc3m cc12m imagenet inaturalist places365 redcaps sun397"
 
 # データセットimagenet_21k
@@ -30,10 +30,10 @@ torchrun --nnodes=1 --nproc_per_node=1 train.py \
         --lr_scheduler 'LambdaLR' \
         --optimizer AdamW \
         -b $batch_size \
-        --num_epochs 1 \
+        --num_epochs 100 \
         --root_dir /home/dataset/ \
         --datasets $dataset \
         --result_dir results/loc/sample/$dataset\/1e-5lambda/enc$enc\_dec$dec/ \
         --loss "CrossEntropy" \
-        --loc_learn "train"\
+        --loc_learn "lora"\
   

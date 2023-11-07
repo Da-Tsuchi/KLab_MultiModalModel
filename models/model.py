@@ -65,8 +65,11 @@ class MyModel(nn.Module):
         del new_model
         # 特定の重みの凍結
         # すべてのパラメータのrequires_gradをFalseに設定してモデル全体を凍結
+        for param in self.transformer.encoder.parameters():
+            param.requires_grad = True
+            
         for param in self.transformer.decoder.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
 
         # 新しく追加したトークンに関連する重みのみを学習可能にします。
         # T5の場合、最後の線形層の重みは共有されているため、lm_headの重みのみを更新します。
@@ -151,6 +154,7 @@ class MyModel(nn.Module):
             # generated = torch.argmax(pred, dim=2)
             generated = self.transformer.generate(
                 inputs_embeds=concated_embeddings,
+                attention_mask = concat_attention_mask,
                 num_beams=num_beams,
                 num_return_sequences=num_return_sequences,
                 do_sample=do_sample,

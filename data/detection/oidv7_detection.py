@@ -24,7 +24,7 @@ class OpenImageDataset(DatasetLoader):
 
         items = items.split("\n")
         items = [item.split("\t") for item in items]
-        items = items[1:]
+        items = items[1:10]
         items = [item for item in items if len(item)==2]
         self.tgt_texts = [item[1] for item in items]
         self.src_texts = ["What objects are in the image?"]*len(items)
