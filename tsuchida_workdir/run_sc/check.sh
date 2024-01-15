@@ -2,7 +2,7 @@ batch_size=10
 # dataset="cc3m cc12m imagenet inaturalist places365 redcaps sun397"
 
 # データセットimagenet_21k
-dataset="visual_genome_refexp"
+dataset="openimage_loc"
 # visual_genome_detect visual_genome_localize visual_genome_categorize
 
 # transformerのパラメタ(層数を変更:デコーダーの層数を1層に変更)
@@ -17,7 +17,7 @@ dec=12
 # language:flant5 small
 
 torchrun --nnodes=1 --nproc_per_node=1 datacheck.py \
-        -l google/flan-t5-large \
+        -l google/flan-t5-small \
         -i microsoft/swinv2-large-patch4-window12to16-192to256-22kto1k-ft \
         --ffn \
         -tm google/flan-t5-base \
@@ -32,9 +32,9 @@ torchrun --nnodes=1 --nproc_per_node=1 datacheck.py \
         --optimizer AdamW \
         -b $batch_size \
         --num_epochs 1 \
-        --root_dir /user/data/ \
+        --root_dir /data01/ \
         --datasets $dataset \
         --result_dir results/datacheck/$dataset \
         --loss "CrossEntropy" \
-        --loc_learn "lora"\
+        --loc_learn "train"\
   

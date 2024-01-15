@@ -15,6 +15,8 @@ from .detection.vg_detection import *
 from .localize.vg_localize import *
 from .categorize.vg_categorize import *
 from .relationship.vg_relationship import *
+from .localize.oidv7_localization import OpenImageDataset_Localization
+# from. qa.vg_qa import *
 
 def get_data(args, src_tokenizer=None, tgt_tokenizer=None):
     train_datasets, val_datasets = [], []
@@ -98,6 +100,8 @@ def get_dataset(args, dataset_name, phase="train", src_tokenizer=None, tgt_token
 
         elif 'openimage' == dataset_name:
             dataset = OpenImageDataset(data_dir, phase=phase)
+        elif 'openimage_loc' == dataset_name:
+            dataset = OpenImageDataset_Localization(data_dir=os.path.join(args.root_dir+"openimage"), phase=phase)
         elif 'visual_genome_refexp' == dataset_name:
             dataset = VisualGenomeRefExpDataset(data_dir=os.path.join(args.root_dir+"visual_genome"), phase=phase)
         elif 'visual_genome_detect' == dataset_name:
@@ -108,6 +112,8 @@ def get_dataset(args, dataset_name, phase="train", src_tokenizer=None, tgt_token
             dataset = VisualGenomeCategorizeDataset(data_dir=os.path.join(args.root_dir+"visual_genome"), phase=phase)
         elif 'visual_genome_relationship' == dataset_name:
             dataset = VisualGenomeRelationDataset(data_dir=os.path.join(args.root_dir+"visual_genome"), phase=phase)
+        elif 'visual_genome_qa' == dataset_name:
+            dataset = VisualGenomeQADataset(data_dir=os.path.join(args.root_dir+"visual_genome"), phase=phase)
         else:
             raise NotImplementedError
     return dataset

@@ -1,4 +1,4 @@
-batch_size=32
+batch_size=30
 
 epoch=50
 
@@ -11,9 +11,9 @@ num_heads=12
 enc=2
 dec=12
 
-dataset="cc3m"
+dataset="openimage_loc"
 python test.py \
-        -l google/flan-t5-large \
+        -l google/flan-t5-small \
         -i microsoft/swinv2-large-patch4-window12to16-192to256-22kto1k-ft \
         --ffn \
         -tm google/flan-t5-base \
@@ -28,7 +28,7 @@ python test.py \
         --num_epochs $epoch \
         --datasets $dataset \
         --root_dir /user/data/ \
-        --result_dir test/$dataset/scratch/enc$enc\_dec$dec/Linear$epoch/ \
-        --loc_learn "train"\
-        --pth_path "/home/tsuchida/KLab_MultiModalModel/results/scratch/base/visual_genome_refexp/enc2_dec12/epoch_50.pth"
+        --result_dir "inference/$dataset/lora/enc$enc\_dec$dec/Linear$epoch/" \
+        --loc_learn "lora"\
+        --pth_path "/home/tsuchida/KLab_MultiModalModel/results/lora/base/vg/visual_genome_refexp/enc2_dec12/epoch_50"
 

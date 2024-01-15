@@ -2,7 +2,7 @@ batch_size=2
 # dataset="cc3m cc12m imagenet inaturalist places365 redcaps sun397"
 
 # データセットimagenet_21k
-dataset="cc3m"
+dataset="openimage_loc"
 
 # transformerのパラメタ(層数を変更:デコーダーの層数を1層に変更)
 d_model=768
@@ -15,7 +15,7 @@ dec=12
 # image:swin_large
 # language:flant5 small
 
-torchrun --nnodes=1 --nproc_per_node=1 train_decode_tune.py \
+torchrun --nnodes=1 --nproc_per_node=1 train.py \
         -l google/flan-t5-small \
         -i microsoft/swinv2-large-patch4-window12to16-192to256-22kto1k-ft \
         --ffn \
@@ -33,5 +33,6 @@ torchrun --nnodes=1 --nproc_per_node=1 train_decode_tune.py \
         --start_epoch 1 \
         --root_dir /data01/ \
         --datasets $dataset \
-        --result_dir results/3090_32/$dataset\/enc$enc\_dec$dec/ \
-        --loss "CrossEntropy"
+        --result_dir results/sample/$dataset\/enc$enc\_dec$dec/ \
+        --loss "CrossEntropy"\
+        --loc_learn "train"\

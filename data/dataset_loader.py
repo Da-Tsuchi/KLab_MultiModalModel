@@ -5,6 +5,11 @@ from PIL import Image,PngImagePlugin
 # Decompressed Data Too Largeになることを防ぐ
 LARGE_ENOUGH_NUMBER = 100
 PngImagePlugin.MAX_TEXT_CHUNK = LARGE_ENOUGH_NUMBER * (1024**2)
+# ImageFile.LOAD_TRUNCATED_IMAGES = True
+CLASSIFY_SRC_TEXT = "What is in this image?"
+CAPTION_SRC_TEXT = "What does the image describe?"
+DETECTION_SRC_TEXT = "What objects are in the image?"
+MAX_VAL_DATA_SIZE = 50000
 
 class DatasetLoader(torch.utils.data.Dataset):
     def __init__(self, resize=256):

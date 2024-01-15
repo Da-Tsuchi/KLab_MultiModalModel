@@ -32,3 +32,4 @@ tsuchida_workdir/train.log
 core
 coco-caption/
 backup.best.pth
+*.pth

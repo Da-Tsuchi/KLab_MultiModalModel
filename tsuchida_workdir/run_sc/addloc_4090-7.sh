@@ -2,14 +2,14 @@ batch_size=3
 # dataset="cc3m cc12m imagenet inaturalist places365 redcaps sun397"
 
 # データセットimagenet_21k
-dataset="openimage"
+dataset="openimage_loc"
 
 # transformerのパラメタ(層数を変更:デコーダーの層数を1層に変更)
 d_model=768
 d_ff=3072
 d_kv=64
 num_heads=12
-enc=0
+enc=2
 dec=12
 
 # image:swin_large
@@ -33,7 +33,10 @@ torchrun --nnodes=1 --nproc_per_node=1 train.py \
         --num_epochs 1 \
         --root_dir /home/dataset/ \
         --datasets $dataset \
-        --result_dir results/loc/sample/$dataset\/1e-5lambda/enc$enc\_dec$dec/ \
+        --result_dir results/test/$dataset\/1e-5lambda/enc$enc\_dec$dec/ \
         --loss "CrossEntropy" \
-        --loc_learn "train"\
+        --loc_learn "lora"\
+        --loc_learn "lora"\
+        --lora_r 4 \
+        --lora_alpha 4 \
   

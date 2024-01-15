@@ -13,7 +13,7 @@ from data import *
 from modules import *
 from modules.acc import *
 from modules.utils import *
-from models.model import MyModel
+from models.model_decode import MyModel
 from peft import LoraConfig, get_peft_model
 # from torchinfo import summary
 
@@ -56,15 +56,33 @@ def train():
 
     # create model
     model = MyModel(args).to(local_rank)
-    tgt_tokenizer = AutoTokenizer.from_pretrained(args.language_model_name, model_max_length=args.max_target_length, use_fast=True, extra_ids=0, additional_special_tokens =[f"<loc_{i}>" for i in range(args.loc_vocab_size)])
-    model.transformer.resize_token_embeddings(len(tgt_tokenizer))
+    # キャプション学習済の重みを読み込む
+    # path = "/home/tsuchida/KLab_MultiModalModel/pth/caption/epoch_50.pth"
+    path = "/data/epoch_50.pth"
+    model.load(result_name=path)
+    tgt_tokenizer = AutoTokenizer.from_pretrained(args.language_model_name, model_max_length=256, use_fast=True, extra_ids=0, additional_special_tokens =[f"<extra_id_{i}>" for i in range(100)] + [f"<loc_{i}>" for i in range(args.loc_vocab_size)] + [f"<img_{i}>" for i in range(args.image_vocab_size)])
+
+    # tgt_tokenizer = AutoTokenizer.from_pretrained(args.language_model_name, model_max_length=args.max_target_length, use_fast=True, extra_ids=0, additional_special_tokens =[f"<loc_{i}>" for i in range(args.loc_vocab_size)])
+    # model.transformer.resize_token_embeddings(len(tgt_tokenizer))
     # print(model)
     if args.loc_learn=="lora":
         lora_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
         target_modules=
-        [
+            [
+                f"transformer.shared"   
+            ]
+            +
+            [
+                f"transformer.decoder.embed_tokens"   
+            ]
+            +
+            [
+                f"transformer.encoder.embed_tokens"   
+            ]
+            +
+            [
                 f"transformer.decoder.block.{i}.layer.0.SelfAttention.{endpoint}" 
                 for i in range(args.transformer_num_decoder_layers)
                 for endpoint in ["q", "k", "v"]
@@ -73,27 +91,46 @@ def train():
                 f"transformer.decoder.block.{i}.layer.1.EncDecAttention.{endpoint}"
                 for i in range(args.transformer_num_decoder_layers)
                 for endpoint in ["q", "k", "v"]
-            ],
+            ]
+            +
+            [
+                f"transformer.decoder.block.{i}.layer.2.DenseReluDense.{endpoint}"
+                for i in range(args.transformer_num_decoder_layers)
+                for endpoint in ["wi", "wo"]
+            ]
+            +
+            [
+                f"transformer.encoder.block.{i}.layer.0.SelfAttention.{endpoint}"
+                for i in range(args.transformer_num_layers)
+                for endpoint in ["q", "k", "v"]
+            ]
+            +
+            [
+                f"transformer.encoder.block.{i}.layer.1.DenseReluDense.{endpoint}"
+                for i in range(args.transformer_num_layers)
+                for endpoint in ["wi", "wo"]
+            ]
+            +
             # [
-            #     f"transformer.encoder.block.{i}.layer.0.SelfAttention.{endpoint}" 
-            #     for i in range(args.transformer_num_layers)
-            #     for endpoint in ["q", "k", "v"]
+            #     f"language_ffn"
             # ]
             # +
             # [
-            #              "transformer.lm_head",
-            #             "language_ffn",
-            #             "image_ffn"],
+            #     f"image_ffn"
+            # ]
+            # +
+            [
+                f"transformer.lm_head"
+            ]
+            ,
 
         lora_dropout=args.lora_dropout,
         bias=args.lora_bias,
-        modules_to_save=[
-            "transformer.encoder",
-            "transformer.lm_head",
-            "language_ffn",
-            "image_ffn"],
         )
         model = get_peft_model(model, lora_config)
+    
+    if world_rank==0:
+        logger.info(model.print_trainable_parameters())
     
     if args.start_epoch > 1:
         model.load(result_name='best.pth')
@@ -101,6 +138,7 @@ def train():
     
     if world_rank==0:
         logger.info(print_trainable_parameters(model))
+        # logger.info(model.print_trainable_parameters())
     
     scaler = torch.cuda.amp.GradScaler(enabled=True if args.float_type == 'float16' else False)
     optimizer = get_optimizer(model, args)
@@ -227,14 +265,14 @@ def train():
 
 
         # 予測と実際のテキストが一致するかどうかを確認
-        cider,bleu = evaluate_score(prs, gts)
-        train_cider += torch.tensor(cider, dtype=torch.float32).to(local_rank)
-        train_bleu += torch.tensor(bleu, dtype=torch.float32).to(local_rank)
+        # result, results = evaluate_score(prs, gts)
+        # train_cider += torch.tensor(cider, dtype=torch.float32).to(local_rank)
+        # train_bleu += torch.tensor(bleu, dtype=torch.float32).to(local_rank)
             
         # 他のノードから集める
         dist.all_reduce(train_loss, op=dist.ReduceOp.SUM)
-        dist.all_reduce(train_cider, op=dist.ReduceOp.SUM)
-        dist.all_reduce(train_bleu, op=dist.ReduceOp.SUM)
+        # dist.all_reduce(train_cider, op=dist.ReduceOp.SUM)
+        # dist.all_reduce(train_bleu, op=dist.ReduceOp.SUM)
 
         if args.phase == 'classify': dist.all_reduce(train_acc, op=dist.ReduceOp.SUM)
         dist.all_reduce(train_count, op=dist.ReduceOp.SUM)
@@ -243,16 +281,15 @@ def train():
         if world_rank == 0:
             train_loss /= train_count
             loss_counter.add("train", train_loss.cpu().numpy().copy())
-            cider_counter.add("train", train_cider.cpu().numpy().copy())  # 正答率をAccCounterに追加
-            # train_bleu_acc =train_bleu.float() / train_count  # 正答率を計算
-            bleu_counter.add("train", train_bleu.cpu().numpy().copy())  # 正答率をAccCounterに追加
+            # cider_counter.add("train", train_cider.cpu().numpy().copy())  # 正答率をAccCounterに追加
+            # bleu_counter.add("train", train_bleu.cpu().numpy().copy())  # 正答率をAccCounterに追加
 
             if args.phase == 'classify': 
                 train_acc /= train_count
                 logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Train] Loss : {train_loss}, Acc : {train_acc}, Steps : {steps}, LR : {optimizer.param_groups[0]["lr"]}')
                 if use_wandb: wandb.log({"epoch":epoch, "train/loss": train_loss, "train/acc": train_acc, "train/lr": optimizer.param_groups[0]["lr"]})
             else:
-                # logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Train] Loss : {train_loss}, Steps : {steps}, LR : {optimizer.param_groups[0]["lr"]}')
+                logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Train] Loss : {train_loss}, Steps : {steps}, LR : {optimizer.param_groups[0]["lr"]}')
                 if use_wandb: wandb.log({"epoch":epoch, "train/loss": train_loss, "train/lr": optimizer.param_groups[0]["lr"]})
 
         if args.lr_scheduler != '' and args.num_steps is None:
@@ -319,34 +356,32 @@ def train():
 
 
         # 予測と実際のテキストが一致するかどうかを確認
-        cider,bleu = evaluate_score(prs, gts)
-        val_cider += torch.tensor(cider, dtype=torch.float32).to(local_rank)
-        val_bleu += torch.tensor(bleu, dtype=torch.float32).to(local_rank)
+        # cider,bleu = evaluate_score(prs, gts)
+        # val_cider += torch.tensor(cider, dtype=torch.float32).to(local_rank)
+        # val_bleu += torch.tensor(bleu, dtype=torch.float32).to(local_rank)
         # 他のノードから集める
         dist.all_reduce(val_loss, op=dist.ReduceOp.SUM)
         if args.phase == 'classify': dist.all_reduce(val_acc, op=dist.ReduceOp.SUM)
         dist.all_reduce(val_count, op=dist.ReduceOp.SUM)
-        dist.all_reduce(val_cider, op=dist.ReduceOp.SUM)
-        dist.all_reduce(val_bleu, op=dist.ReduceOp.SUM)
+        # dist.all_reduce(val_cider, op=dist.ReduceOp.SUM)
+        # dist.all_reduce(val_bleu, op=dist.ReduceOp.SUM)
         
         if world_rank == 0:
             val_loss /= val_count
             loss_counter.add("val", val_loss.cpu().numpy().copy())
-            # val_cider_acc = val_cider.float() / train_count  # 正答率を計算
-            cider_counter.add("val", val_cider.cpu().numpy().copy())  # 正答率をAccCounterに追加
-            # val_bleu_acc = val_bleu.float() / train_count  # 正答率を計算
-            bleu_counter.add("val", val_bleu.cpu().numpy().copy())  # 正答率をAccCounterに追加
+            # cider_counter.add("val", val_cider.cpu().numpy().copy())  # 正答率をAccCounterに追加
+            # bleu_counter.add("val", val_bleu.cpu().numpy().copy())  # 正答率をAccCounterに追加
 
             if args.phase == 'classify':
                 val_acc /= val_count
                 logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Val] Loss : {val_loss}, Acc : {val_acc}')
                 if use_wandb: wandb.log({"epoch": epoch, "val/loss": val_loss, "val/acc": val_acc})
             else:
-                # logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Val] Loss : {val_loss}')
+                logger.info(f'[Epoch ({epoch}/{args.num_epochs}) Val] Loss : {val_loss}')
                 if use_wandb: wandb.log({"epoch": epoch, "val/loss": val_loss})
 
-            logger.info(f'[Epoch ({epoch}/{args.num_epochs})] Train loss : {train_loss}, Val loss : {val_loss}, Train cider : {train_cider}, Val cider : {val_cider}, Train bleu : {train_bleu}, Val bleu : {val_bleu}, Train Count : {train_count}, Val Count : {val_count},Steps : {steps}')
-            wandb.log({"train_cider": train_cider, "val_cider": val_cider, "train_bleu": train_bleu, "val_bleu": val_bleu})
+            # logger.info(f'[Epoch ({epoch}/{args.num_epochs})] Train loss : {train_loss}, Val loss : {val_loss}, Train cider : {train_cider}, Val cider : {val_cider}, Train bleu : {train_bleu}, Val bleu : {val_bleu}, Train Count : {train_count}, Val Count : {val_count},Steps : {steps}')
+            # wandb.log({"train_cider": train_cider, "val_cider": val_cider, "train_bleu": train_bleu, "val_bleu": val_bleu})
 
             if val_loss < min_val_loss:
                 min_val_loss = val_loss
@@ -385,7 +420,7 @@ def train():
 
 def wandb_init(args):
     wandb.init(
-        project=f"{args.phase}_"+"_".join(args.datasets), 
+        project=f"{args.phase}_"+"_".join(args.datasets)+"自作モデル", 
         name=args.lr_scheduler if args.lr_scheduler != '' else 'wo_scheduler',
         config=args
     )

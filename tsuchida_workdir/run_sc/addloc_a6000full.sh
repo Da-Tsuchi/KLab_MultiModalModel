@@ -3,7 +3,7 @@ batch_size=80
 # dataset="cc3m cc12m imagenet inaturalist places365 redcaps sun397"
 
 # データセットimagenet_21k
-dataset="visual_genome_refexp"
+dataset="openimage_loc"
 
 # transformerのパラメタ(層数を変更:デコーダーの層数を1層に変更)
 # base用
@@ -19,7 +19,7 @@ dec=12
 # language:flant5 small
 
 torchrun --nnodes=1 --nproc_per_node=4 train.py \
-        -l google/flan-t5-large \
+        -l google/flan-t5-small \
         -i microsoft/swinv2-large-patch4-window12to16-192to256-22kto1k-ft \
         --ffn \
         -tm google/flan-t5-base \
